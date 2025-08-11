@@ -1,14 +1,14 @@
-import { MongoClient, ObjectId } from "mongodb";
+const { MongoClient, ObjectId } = require("mongodb");
 
 const uri = process.env.MONGODB_URI;
-let cachedClient = globalThis._mongoClient;
-let cachedDb = globalThis._mongoDb;
+let cachedClient = global._mongoClient;
+let cachedDb = global._mongoDb;
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   if (!cachedClient) {
-    cachedClient = globalThis._mongoClient = new MongoClient(uri);
+    cachedClient = global._mongoClient = new MongoClient(uri);
     await cachedClient.connect();
-    cachedDb = globalThis._mongoDb = cachedClient.db("superserver");
+    cachedDb = global._mongoDb = cachedClient.db("superserver");
   }
   const db = cachedDb;
   const tasks = db.collection("tasks");
@@ -41,4 +41,4 @@ export default async function handler(req, res) {
   }
 
   res.status(405).end();
-}
+};
