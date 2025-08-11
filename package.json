@@ -1,0 +1,10 @@
+{
+  "name": "superserver-vercel",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "vercel dev"
+  },
+  "dependencies": {
+    "mongodb": "^6.0.0"
+  }
+}
