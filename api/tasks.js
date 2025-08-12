@@ -1,21 +1,12 @@
-// api/tasks.js — production-ready, CommonJS, Vercel serverless handler
-// - Uses a trimmed MONGODB_URI from env
-// - Connection caching via globalThis for serverless reuse
-// - Robust input validation and clear error responses
-// - Safe logs: avoid leaking full URI or password
-
 const { MongoClient, ObjectId } = require('mongodb');
 
-// Read and trim the env var (defensive: removes accidental spaces/newlines)
 const rawUri = process.env.MONGODB_URI || '';
 const uri = rawUri.trim();
 
 if (!uri) {
-  // will still allow deploy but every request will return a clear error
   console.error('MONGODB_URI is missing or empty in environment');
 }
 
-// cached instances for serverless environment
 let cachedClient = globalThis.__mongoClient;
 let cachedDb = globalThis.__mongoDb;
 
@@ -23,17 +14,13 @@ async function connectToDatabase() {
   if (cachedClient && cachedDb) return { client: cachedClient, db: cachedDb };
   if (!uri) throw new Error('Missing MONGODB_URI');
 
-  // Create and connect a new MongoClient
   const client = new MongoClient(uri, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
     serverSelectionTimeoutMS: 10000, // fail faster
   });
 
   await client.connect();
   const db = client.db('superserver');
 
-  // cache for future invocations
   cachedClient = client;
   cachedDb = db;
   globalThis.__mongoClient = client;
@@ -48,21 +35,17 @@ function sendJson(res, status, payload) {
 }
 
 function sendError(res, status, message, details) {
-  // log details server-side only
   if (details) console.error(message, details);
   return sendJson(res, status, { error: message });
 }
 
 module.exports = async function handler(req, res) {
-  // quick health: ensure env exists
   if (!uri) return sendError(res, 500, 'Database configuration missing');
 
-  // Connect to DB (cached)
   let db;
   try {
     ({ db } = await connectToDatabase());
   } catch (err) {
-    // common causes: bad auth, network, malformed URI
     console.error('MongoDB connection failed:', err && err.message ? err.message : err);
     return sendError(res, 500, 'Database connection failed');
   }
@@ -116,9 +99,7 @@ module.exports = async function handler(req, res) {
 
     res.setHeader('Allow', 'GET,POST,PUT,DELETE');
     return sendError(res, 405, 'Method Not Allowed');
-
   } catch (err) {
-    // unexpected error
     console.error('/api/tasks unexpected error:', err);
     return sendError(res, 500, 'internal_server_error');
   }
