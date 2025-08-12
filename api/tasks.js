@@ -6,40 +6,25 @@ let cachedClient;
 let cachedDb;
 
 export default async function handler(req, res) {
-  if (!cachedClient) {
-    cachedClient = new MongoClient(uri);
-    await cachedClient.connect();
-    cachedDb = cachedClient.db("superserver");
-  }
-  const db = cachedDb;
-  const tasks = db.collection("tasks");
+  try {
+    if (!cachedClient) {
+      cachedClient = new MongoClient(uri);
+      await cachedClient.connect();
+      cachedDb = cachedClient.db("superserver");
+    }
+    const db = cachedDb;
+    const tasks = db.collection("tasks");
 
-  if (req.method === "GET") {
-    const allTasks = await tasks.find({}).toArray();
-    return res.status(200).json(allTasks);
-  }
+    if (req.method === "GET") {
+      const allTasks = await tasks.find({}).toArray();
+      return res.status(200).json(allTasks);
+    }
 
-  if (req.method === "POST") {
-    const { title } = req.body;
-    if (!title) return res.status(400).json({ error: "title required" });
-    const doc = { title, done: false, created_at: new Date() };
-    await tasks.insertOne(doc);
-    return res.status(201).json(doc);
-  }
+    // Add more methods here if you want
 
-  if (req.method === "PUT") {
-    const { id } = req.query;
-    const existing = await tasks.findOne({ _id: new ObjectId(id) });
-    if (!existing) return res.status(404).json({ error: "not found" });
-    await tasks.updateOne({ _id: existing._id }, { $set: { done: !existing.done } });
-    return res.status(200).json({ ...existing, done: !existing.done });
+    res.status(405).json({ error: "Method not allowed" });
+  } catch (error) {
+    console.error("API error:", error);
+    res.status(500).json({ error: error.message });
   }
-
-  if (req.method === "DELETE") {
-    const { id } = req.query;
-    await tasks.deleteOne({ _id: new ObjectId(id) });
-    return res.status(200).json({ ok: true });
-  }
-
-  res.status(405).end();
 }
