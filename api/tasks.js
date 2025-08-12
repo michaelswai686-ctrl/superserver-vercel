@@ -1,106 +1,45 @@
-const { MongoClient, ObjectId } = require('mongodb');
+import { MongoClient, ObjectId } from "mongodb";
 
-const rawUri = process.env.MONGODB_URI || '';
-const uri = rawUri.trim();
+const uri = process.env.MONGODB_URI;
 
-if (!uri) {
-  console.error('MONGODB_URI is missing or empty in environment');
-}
+let cachedClient;
+let cachedDb;
 
-let cachedClient = globalThis.__mongoClient;
-let cachedDb = globalThis.__mongoDb;
+export default async function handler(req, res) {
+  if (!cachedClient) {
+    cachedClient = new MongoClient(uri);
+    await cachedClient.connect();
+    cachedDb = cachedClient.db("superserver");
+  }
+  const db = cachedDb;
+  const tasks = db.collection("tasks");
 
-async function connectToDatabase() {
-  if (cachedClient && cachedDb) return { client: cachedClient, db: cachedDb };
-  if (!uri) throw new Error('Missing MONGODB_URI');
-
-  const client = new MongoClient(uri, {
-    serverSelectionTimeoutMS: 10000, // fail faster
-  });
-
-  await client.connect();
-  const db = client.db('superserver');
-
-  cachedClient = client;
-  cachedDb = db;
-  globalThis.__mongoClient = client;
-  globalThis.__mongoDb = db;
-
-  return { client, db };
-}
-
-function sendJson(res, status, payload) {
-  res.setHeader('Content-Type', 'application/json');
-  res.status(status).json(payload);
-}
-
-function sendError(res, status, message, details) {
-  if (details) console.error(message, details);
-  return sendJson(res, status, { error: message });
-}
-
-module.exports = async function handler(req, res) {
-  if (!uri) return sendError(res, 500, 'Database configuration missing');
-
-  let db;
-  try {
-    ({ db } = await connectToDatabase());
-  } catch (err) {
-    console.error('MongoDB connection failed:', err && err.message ? err.message : err);
-    return sendError(res, 500, 'Database connection failed');
+  if (req.method === "GET") {
+    const allTasks = await tasks.find({}).toArray();
+    return res.status(200).json(allTasks);
   }
 
-  const tasks = db.collection('tasks');
-
-  try {
-    if (req.method === 'GET') {
-      const list = await tasks.find({}).sort({ created_at: -1 }).toArray();
-      return sendJson(res, 200, list);
-    }
-
-    if (req.method === 'POST') {
-      const body = req.body || {};
-      const title = typeof body.title === 'string' ? body.title.trim() : '';
-      if (!title) return sendError(res, 400, 'title required');
-
-      const doc = { title, done: false, created_at: new Date() };
-      const result = await tasks.insertOne(doc);
-      doc._id = result.insertedId;
-      return sendJson(res, 201, doc);
-    }
-
-    if (req.method === 'PUT') {
-      const id = req.query && req.query.id;
-      if (!id) return sendError(res, 400, 'id required');
-      let _id;
-      try { _id = new ObjectId(id); } catch (e) { return sendError(res, 400, 'invalid id'); }
-
-      const existing = await tasks.findOne({ _id });
-      if (!existing) return sendError(res, 404, 'not found');
-
-      const updated = await tasks.findOneAndUpdate(
-        { _id },
-        { $set: { done: !existing.done } },
-        { returnDocument: 'after' }
-      );
-
-      return sendJson(res, 200, updated.value);
-    }
-
-    if (req.method === 'DELETE') {
-      const id = req.query && req.query.id;
-      if (!id) return sendError(res, 400, 'id required');
-      let _id;
-      try { _id = new ObjectId(id); } catch (e) { return sendError(res, 400, 'invalid id'); }
-
-      await tasks.deleteOne({ _id });
-      return sendJson(res, 200, { ok: true });
-    }
-
-    res.setHeader('Allow', 'GET,POST,PUT,DELETE');
-    return sendError(res, 405, 'Method Not Allowed');
-  } catch (err) {
-    console.error('/api/tasks unexpected error:', err);
-    return sendError(res, 500, 'internal_server_error');
+  if (req.method === "POST") {
+    const { title } = req.body;
+    if (!title) return res.status(400).json({ error: "title required" });
+    const doc = { title, done: false, created_at: new Date() };
+    await tasks.insertOne(doc);
+    return res.status(201).json(doc);
   }
-};
+
+  if (req.method === "PUT") {
+    const { id } = req.query;
+    const existing = await tasks.findOne({ _id: new ObjectId(id) });
+    if (!existing) return res.status(404).json({ error: "not found" });
+    await tasks.updateOne({ _id: existing._id }, { $set: { done: !existing.done } });
+    return res.status(200).json({ ...existing, done: !existing.done });
+  }
+
+  if (req.method === "DELETE") {
+    const { id } = req.query;
+    await tasks.deleteOne({ _id: new ObjectId(id) });
+    return res.status(200).json({ ok: true });
+  }
+
+  res.status(405).end();
+}
